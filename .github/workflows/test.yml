@@ -162,3 +162,32 @@ jobs:
         with:
           name: wheels-manylinux-${{ matrix.target }}
           path: dist/*.whl
+
+  create-release:
+    name: Create GitHub Release
+    if: >-
+      github.repository == 'AlexanderNenninger/polars_list_utils' &&
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/')
+    needs: [test, macos-wheels, windows-wheels, manylinux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create release for tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          make_latest: true
+          files: dist/*.whl
