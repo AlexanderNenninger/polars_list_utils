@@ -96,6 +96,80 @@ def test_asof_join_lists_strategies() -> None:
     assert nearest["y_idx"] == [[0, 1, 3], [1], None]
 
 
+def test_list_zip_basic_and_dtype() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, None], [3], None],
+            "b": [["x", "y", "z", "extra"], ["u", "v"], ["w"]],
+        }
+    )
+
+    out = df.with_columns(z=polist.list_zip("a", "b"))
+
+    assert out.get_column("z").to_list() == [
+        [
+            {"a": 1, "b": "x"},
+            {"a": 2, "b": "y"},
+            {"a": None, "b": "z"},
+        ],
+        [{"a": 3, "b": "u"}],
+        None,
+    ]
+
+    assert out.schema["z"] == pl.List(
+        pl.Struct(
+            [
+                pl.Field("a", pl.Int64),
+                pl.Field("b", pl.String),
+            ]
+        )
+    )
+
+
+def test_list_zip_with_padding() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, None], [3], None],
+            "b": [["x", "y", "z", "extra"], ["u", "v"], ["w"]],
+        }
+    )
+
+    out = df.with_columns(z=polist.list_zip("a", "b", pad=True))
+
+    assert out.get_column("z").to_list() == [
+        [
+            {"a": 1, "b": "x"},
+            {"a": 2, "b": "y"},
+            {"a": None, "b": "z"},
+            {"a": None, "b": "extra"},
+        ],
+        [
+            {"a": 3, "b": "u"},
+            {"a": None, "b": "v"},
+        ],
+        None,
+    ]
+
+
+def test_list_unzip_roundtrip_and_dtype() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, None], [3], None],
+            "b": [["x", "y", "z", "extra"], ["u", "v"], ["w"]],
+        }
+    ).with_columns(z=polist.list_zip("a", "b"))
+
+    out = df.with_columns(
+        polist.list_unzip("z").struct.unnest().name.suffix("_unzipped")
+    )
+
+    assert out.get_column("a_unzipped").to_list() == [[1, 2, None], [3], None]
+    assert out.get_column("b_unzipped").to_list() == [["x", "y", "z"], ["u"], None]
+
+    assert out.schema["a_unzipped"] == pl.List(pl.Int64)
+    assert out.schema["b_unzipped"] == pl.List(pl.String)
+
+
 def test_operate_scalar_on_list_all_operations() -> None:
     df = pl.DataFrame(
         {

@@ -167,6 +167,33 @@ def asof_join_lists(
     )
 
 
+def list_zip(
+    list_column_left: Union[pl.Expr, str, pl.Series],
+    list_column_right: Union[pl.Expr, str, pl.Series],
+    pad: bool = False,
+) -> pl.Expr:
+    return register_plugin_function(
+        args=[list_column_left, list_column_right],
+        kwargs={
+            "pad": pad,
+        },
+        plugin_path=root_path,
+        function_name="expr_list_zip",
+        is_elementwise=True,
+    )
+
+
+def list_unzip(
+    list_struct_column: Union[pl.Expr, str, pl.Series],
+) -> pl.Expr:
+    return register_plugin_function(
+        args=[list_struct_column],
+        plugin_path=root_path,
+        function_name="expr_list_unzip",
+        is_elementwise=True,
+    )
+
+
 def arg_sort_list(
     list_column: Union[pl.Expr, str, pl.Series],
     descending: bool = False,

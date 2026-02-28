@@ -1,8 +1,147 @@
-use crate::util::struct_list_u32_dtype;
+use crate::util::{list_struct_dtype, struct_list_u32_dtype, struct_of_lists_dtype};
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 use std::cmp::Ordering;
+
+#[derive(Deserialize, Default)]
+struct ListZipKwargs {
+    #[serde(default)]
+    pad: bool,
+}
+
+fn pad_series_with_nulls(
+    s: Series,
+    target_len: usize,
+) -> PolarsResult<Series> {
+    if s.len() < target_len {
+        s.extend_constant(AnyValue::Null, target_len - s.len())
+    } else {
+        Ok(s)
+    }
+}
+
+/// Zip two list columns into a list of structs per row.
+///
+/// Each output element is a struct with fields named after the input columns.
+/// If both inner lists are present, zipping is done up to the minimum of both
+/// lengths by default. If `pad=true`, output length is the maximum of both
+/// lengths and missing values are padded with nulls. If either row is null,
+/// the output row is null.
+#[polars_expr(output_type_func=list_struct_dtype)]
+fn expr_list_zip(
+    inputs: &[Series],
+    kwargs: ListZipKwargs,
+) -> PolarsResult<Series> {
+    let left = inputs[0].list()?;
+    let right = inputs[1].list()?;
+
+    let left_name = left.name().clone();
+    let right_name = right.name().clone();
+
+    let mut rows: Vec<Option<Series>> = Vec::with_capacity(left.len());
+
+    for (left_row, right_row) in left.amortized_iter().zip(right.amortized_iter()) {
+        match (left_row, right_row) {
+            (Some(left_row), Some(right_row)) => {
+                let left_row = left_row.as_ref();
+                let right_row = right_row.as_ref();
+                let zipped_len = if kwargs.pad {
+                    left_row.len().max(right_row.len())
+                } else {
+                    left_row.len().min(right_row.len())
+                };
+
+                let mut left_zipped = if kwargs.pad {
+                    pad_series_with_nulls(left_row.clone(), zipped_len)?
+                } else {
+                    left_row.slice(0, zipped_len)
+                };
+                let mut right_zipped = if kwargs.pad {
+                    pad_series_with_nulls(right_row.clone(), zipped_len)?
+                } else {
+                    right_row.slice(0, zipped_len)
+                };
+                left_zipped.rename(left_name.clone());
+                right_zipped.rename(right_name.clone());
+
+                let zipped_struct = StructChunked::from_series(
+                    PlSmallStr::EMPTY,
+                    zipped_len,
+                    [left_zipped, right_zipped].iter(),
+                )?
+                .into_series();
+
+                rows.push(Some(zipped_struct));
+            }
+            _ => rows.push(None),
+        }
+    }
+
+    let out: ListChunked = rows.into_iter().collect();
+    Ok(out.into_series())
+}
+
+/// Unzip a list-of-struct column into a struct-of-lists column.
+///
+/// For each row, this transforms `List[Struct{f1, f2, ...}]` into
+/// `Struct{f1: List, f2: List, ...}`. If a row is null, each output field in
+/// the struct is null for that row.
+#[polars_expr(output_type_func=struct_of_lists_dtype)]
+fn expr_list_unzip(inputs: &[Series]) -> PolarsResult<Series> {
+    let zipped = inputs[0].list()?;
+
+    let struct_fields = match zipped.inner_dtype() {
+        DataType::Struct(fields) => fields.clone(),
+        dt => {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "(list_unzip): expected List[Struct] input dtype, got List[{dt:?}]"
+                )
+                .into(),
+            ));
+        }
+    };
+
+    let n_fields = struct_fields.len();
+    let mut per_field_rows: Vec<Vec<Option<Series>>> = (0..n_fields)
+        .map(|_| Vec::with_capacity(zipped.len()))
+        .collect();
+
+    for row in zipped.amortized_iter() {
+        if let Some(row) = row {
+            let row = row.as_ref();
+            let struct_ca = row.struct_()?;
+            let field_series = struct_ca.fields_as_series();
+            for (rows, field_values) in per_field_rows.iter_mut().zip(field_series.iter())
+            {
+                rows.push(Some(field_values.clone()));
+            }
+        } else {
+            for rows in &mut per_field_rows {
+                rows.push(None);
+            }
+        }
+    }
+
+    let out_series: Vec<Series> = struct_fields
+        .iter()
+        .zip(per_field_rows.into_iter())
+        .map(|(field, rows)| {
+            let mut list_series = ListChunked::from_iter(rows).into_series();
+            list_series.rename(field.name.clone());
+            list_series
+        })
+        .collect();
+
+    let out = StructChunked::from_series(
+        zipped.name().clone(),
+        zipped.len(),
+        out_series.iter(),
+    )?;
+
+    Ok(out.into_series())
+}
 
 #[derive(Deserialize)]
 struct ListInnerJoinKwargs {

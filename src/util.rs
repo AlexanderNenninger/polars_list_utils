@@ -42,6 +42,74 @@ pub fn struct_list_u32_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
     ))
 }
 
+/// For two list columns, return a list of struct dtype preserving inner dtypes.
+pub fn list_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
+    let left_name = input_fields[0].name.clone();
+    let right_name = input_fields[1].name.clone();
+
+    let left_inner = match &input_fields[0].dtype {
+        DataType::List(inner) => inner.as_ref().clone(),
+        dt => {
+            return Err(PolarsError::ComputeError(
+                format!("(list_zip): expected List dtype on left input, got {dt:?}")
+                    .into(),
+            ));
+        }
+    };
+    let right_inner = match &input_fields[1].dtype {
+        DataType::List(inner) => inner.as_ref().clone(),
+        dt => {
+            return Err(PolarsError::ComputeError(
+                format!("(list_zip): expected List dtype on right input, got {dt:?}")
+                    .into(),
+            ));
+        }
+    };
+
+    Ok(Field::new(
+        input_fields[0].name.clone(),
+        DataType::List(Box::new(DataType::Struct(
+            [
+                Field::new(left_name, left_inner),
+                Field::new(right_name, right_inner),
+            ]
+            .into(),
+        ))),
+    ))
+}
+
+/// For a list-of-struct column, return a struct-of-lists dtype.
+pub fn struct_of_lists_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
+    let struct_fields = match &input_fields[0].dtype {
+        DataType::List(inner) => match inner.as_ref() {
+            DataType::Struct(fields) => fields,
+            dt => {
+                return Err(PolarsError::ComputeError(
+                    format!(
+                        "(list_unzip): expected List[Struct] input dtype, got List[{dt:?}]"
+                    )
+                    .into(),
+                ));
+            }
+        },
+        dt => {
+            return Err(PolarsError::ComputeError(
+                format!("(list_unzip): expected List input dtype, got {dt:?}").into(),
+            ));
+        }
+    };
+
+    let out_fields: Vec<Field> = struct_fields
+        .iter()
+        .map(|f| Field::new(f.name.clone(), DataType::List(Box::new(f.dtype.clone()))))
+        .collect();
+
+    Ok(Field::new(
+        input_fields[0].name.clone(),
+        DataType::Struct(out_fields.into()),
+    ))
+}
+
 /// From the [plugin tutorial](https://marcogorelli.github.io/polars-plugins-tutorial/lists/)
 /// by Marco Gorelli:
 /// Polars Series are backed by chunked arrays.
