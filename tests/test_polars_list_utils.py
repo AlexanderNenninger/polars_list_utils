@@ -149,17 +149,11 @@ def test_aggregate_list_col_elementwise_from_example_pattern() -> None:
     )
 
     out = df.group_by(pl.lit(1)).agg(
-        mean=polist.aggregate_list_col_elementwise(
-            "list_col", list_size=4, aggregation="mean"
-        ),
-        summ=polist.aggregate_list_col_elementwise(
-            "list_col", list_size=4, aggregation="sum"
-        ),
-        count=polist.aggregate_list_col_elementwise(
-            "list_col", list_size=4, aggregation="count"
-        ),
-        mean_short=polist.aggregate_list_col_elementwise(
-            "list_col", list_size=2, aggregation="mean"
+        mean=polist.aggregate_list_col_elementwise("list_col", aggregation="mean"),
+        summ=polist.aggregate_list_col_elementwise("list_col", aggregation="sum"),
+        count=polist.aggregate_list_col_elementwise("list_col", aggregation="count"),
+        product=polist.aggregate_list_col_elementwise(
+            "list_col", aggregation="product"
         ),
     )
 
@@ -167,7 +161,70 @@ def test_aggregate_list_col_elementwise_from_example_pattern() -> None:
     assert row["mean"] == [None, 0.5, 0.0, 0.0]
     assert row["summ"] == [None, 1.0, 0.0, 0.0]
     assert row["count"] == [0.0, 2.0, 2.0, 2.0]
-    assert row["mean_short"] == [None, 0.5]
+    assert row["product"] == [None, 0.0, 0.0, 0.0]
+
+
+def test_aggregate_list_col_elementwise_dynamic_expansion() -> None:
+    df = pl.DataFrame(
+        {
+            "list_col": [
+                [1.0, 2.0],
+                [3.0, 4.0, 5.0, 6.0],
+                [7.0],
+            ]
+        }
+    )
+
+    out = df.group_by(pl.lit(1)).agg(
+        summ=polist.aggregate_list_col_elementwise("list_col", aggregation="sum"),
+        count=polist.aggregate_list_col_elementwise("list_col", aggregation="count"),
+        mean=polist.aggregate_list_col_elementwise("list_col", aggregation="mean"),
+        product=polist.aggregate_list_col_elementwise(
+            "list_col", aggregation="product"
+        ),
+    )
+
+    row = out.row(0, named=True)
+    assert row["summ"] == [11.0, 6.0, 5.0, 6.0]
+    assert row["count"] == [3.0, 2.0, 1.0, 1.0]
+    assert row["mean"] == [11.0 / 3.0, 3.0, 5.0, 6.0]
+    assert row["product"] == [21.0, 8.0, 5.0, 6.0]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "vals"),
+    [
+        (pl.List(pl.Int64), [[1, 2], [3, 4, 5]]),
+        (pl.List(pl.UInt32), [[1, 2], [3, 4, 5]]),
+        (pl.List(pl.Float32), [[1.0, 2.0], [3.0, 4.0, 5.0]]),
+        (pl.List(pl.Float64), [[1.0, 2.0], [3.0, 4.0, 5.0]]),
+    ],
+)
+def test_aggregate_list_col_elementwise_numeric_input_dtypes(
+    dtype: pl.DataType,
+    vals: list[list[int]] | list[list[float]],
+) -> None:
+    df = pl.DataFrame({"list_col": vals}).with_columns(pl.col("list_col").cast(dtype))
+
+    out = df.group_by(pl.lit(1)).agg(
+        summ=polist.aggregate_list_col_elementwise("list_col", aggregation="sum"),
+        count=polist.aggregate_list_col_elementwise("list_col", aggregation="count"),
+        mean=polist.aggregate_list_col_elementwise("list_col", aggregation="mean"),
+        product=polist.aggregate_list_col_elementwise(
+            "list_col", aggregation="product"
+        ),
+    )
+
+    assert out.schema["summ"] == dtype
+    assert out.schema["count"] == dtype
+    assert out.schema["mean"] == dtype
+    assert out.schema["product"] == dtype
+
+    row = out.row(0, named=True)
+    assert row["summ"] == [4.0, 6.0, 5.0]
+    assert row["count"] == [2.0, 2.0, 1.0]
+    assert row["mean"] == [2.0, 3.0, 5.0]
+    assert row["product"] == [3.0, 8.0, 5.0]
 
 
 def test_mean_and_agg_of_range_from_example_pattern() -> None:

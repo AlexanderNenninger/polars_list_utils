@@ -1,47 +1,122 @@
-use crate::util::list_f64_dtype;
+use crate::util::same_dtype;
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct AggregateListKwargs {
-    list_size: usize,
     aggregation: String,
 }
+
+macro_rules! aggregate_list_native {
+    ($fn_name:ident, $ca_method:ident, $val_ty:ty, $acc_ty:ty, $valid:expr) => {
+        fn $fn_name(
+            ca: &ListChunked,
+            aggregation: &str,
+            out_inner_dtype: &DataType,
+        ) -> PolarsResult<Series> {
+            let mut buckets: Vec<Option<$acc_ty>> = Vec::new();
+            let mut products: Vec<Option<$acc_ty>> = Vec::new();
+            let mut counts: Vec<usize> = Vec::new();
+
+            for row in ca.amortized_iter() {
+                let Some(row) = row else {
+                    continue;
+                };
+
+                let row = row.as_ref();
+                let row = row.$ca_method()?;
+
+                for (idx, val) in row.iter().enumerate() {
+                    if idx >= buckets.len() {
+                        buckets.resize(idx + 1, None);
+                        products.resize(idx + 1, None);
+                        counts.resize(idx + 1, 0);
+                    }
+
+                    if let Some(val) = val
+                        && ($valid)(val)
+                    {
+                        let val: $acc_ty = val as $acc_ty;
+                        if let Some(bucket) = &mut buckets[idx] {
+                            *bucket += val;
+                        } else {
+                            buckets[idx] = Some(val);
+                        }
+
+                        if let Some(product) = &mut products[idx] {
+                            *product *= val;
+                        } else {
+                            products[idx] = Some(val);
+                        }
+
+                        counts[idx] += 1;
+                    }
+                }
+            }
+
+            let out = match aggregation {
+                "mean" => buckets
+                    .iter()
+                    .zip(counts.iter())
+                    .map(|(bucket, count)| {
+                        if *count == 0 || bucket.is_none() {
+                            None
+                        } else {
+                            Some(bucket.unwrap() / (*count as $acc_ty))
+                        }
+                    })
+                    .collect::<Vec<Option<$acc_ty>>>(),
+                "sum" => buckets,
+                "count" => counts
+                    .iter()
+                    .map(|count| Some(*count as $acc_ty))
+                    .collect::<Vec<Option<$acc_ty>>>(),
+                "product" => products,
+                _ => unreachable!(),
+            };
+
+            let out = Series::new(PlSmallStr::EMPTY, out)
+                .implode()?
+                .cast(&DataType::List(Box::new(out_inner_dtype.clone())))?;
+
+            Ok(out.into())
+        }
+    };
+}
+
+aggregate_list_native!(agg_i8, i8, i8, i64, |_: i8| true);
+aggregate_list_native!(agg_i16, i16, i16, i64, |_: i16| true);
+aggregate_list_native!(agg_i32, i32, i32, i64, |_: i32| true);
+aggregate_list_native!(agg_i64, i64, i64, i64, |_: i64| true);
+aggregate_list_native!(agg_u8, u8, u8, u64, |_: u8| true);
+aggregate_list_native!(agg_u16, u16, u16, u64, |_: u16| true);
+aggregate_list_native!(agg_u32, u32, u32, u64, |_: u32| true);
+aggregate_list_native!(agg_u64, u64, u64, u64, |_: u64| true);
+aggregate_list_native!(agg_f32, f32, f32, f32, |x: f32| x.is_finite());
+aggregate_list_native!(agg_f64, f64, f64, f64, |x: f64| x.is_finite());
 
 /// Aggregate the elements, column-wise, of a `List` column.
 ///
 /// The function raises an Error if:
-/// * the aggregation method is not one of "mean", "sum", or "count"
-/// * the list_size is 0
-/// * any of the lists in the column is shorter than list_size
+/// * the aggregation method is not one of "mean", "sum", "count", or "product"
+///
+/// The function dynamically expands its internal buffers when it encounters
+/// longer sublists.
 ///
 /// ## Parameters
-/// - `list_size`: The size of each list in the `List` column to aggregate.
-/// - `aggregation`: The aggregation method to use. One of "mean", "sum", or "count".
+/// - `aggregation`: The aggregation method to use. One of "mean", "sum", "count", or "product".
 ///
 /// ## Return value
-/// New `List[f64]` column with the result of the aggregation.
-#[polars_expr(output_type_func=list_f64_dtype)]
+/// New `List` column with the same inner dtype as the input.
+#[polars_expr(output_type_func=same_dtype)]
 fn expr_aggregate_list_col_elementwise(
     inputs: &[Series],
     kwargs: AggregateListKwargs,
 ) -> PolarsResult<Series> {
-    let input = inputs[0].cast(&DataType::List(Box::new(DataType::Float64)))?;
-    let ca = input.list()?;
+    let ca = inputs[0].list()?;
 
-    if ca.is_empty() {
-        return Series::new(PlSmallStr::EMPTY, Vec::<Option<f64>>::new())
-            .cast(&DataType::List(Box::new(DataType::Float64)));
-    }
-
-    if kwargs.list_size == 0 {
-        return Err(PolarsError::ComputeError(
-            "(aggregate_list_col_elementwise): list_size must be greater than 0".into(),
-        ));
-    }
-
-    let valid_aggregations = ["mean", "sum", "count"];
+    let valid_aggregations = ["mean", "sum", "count", "product"];
     if !valid_aggregations.contains(&kwargs.aggregation.as_str()) {
         return Err(PolarsError::ComputeError(
             format!(
@@ -53,73 +128,25 @@ fn expr_aggregate_list_col_elementwise(
         ));
     }
 
-    let mut buckets: Vec<Option<f64>> = vec![None; kwargs.list_size];
-    let mut counts: Vec<usize> = vec![0; kwargs.list_size];
+    let inner_dtype = ca.inner_dtype().clone();
 
-    let mut list_too_short = false;
-    let dummy_vec: Vec<f64> = Vec::new();
-
-    // Collect the `List[f64]` values into a Vec<f64>
-    let _ = ca.apply_amortized(|s| {
-        let s: &Series = s.as_ref();
-        let ca: &Float64Chunked = s.f64().unwrap();
-
-        // Collect the `List[f64]` values into a Vec<f64>
-        let elements: Vec<Option<f64>> = ca
-            .iter()
-            .zip(buckets.iter_mut())
-            .zip(counts.iter_mut())
-            .map(|((val, bucket), count)| {
-                if !val.is_none_or(|x| x.is_nan() || x.is_infinite()) {
-                    if let Some(bucket) = bucket {
-                        *bucket += val.unwrap();
-                    } else {
-                        *bucket = Some(val.unwrap());
-                    }
-                    *count += 1;
-                }
-                val
-            })
-            .collect();
-
-        // Check if any of the lists is shorter than the given list_size
-        if elements.len() < kwargs.list_size {
-            list_too_short = true;
-        }
-
-        // Return as Series
-        Series::new(PlSmallStr::EMPTY, dummy_vec.clone())
-    });
-
-    let out = match kwargs.aggregation.as_str() {
-        "mean" => buckets
-            .iter()
-            .zip(counts.iter())
-            .map(|(bucket, count)| {
-                if *count == 0 || bucket.is_none() {
-                    None
-                } else {
-                    Some(bucket.unwrap() / *count as f64)
-                }
-            })
-            .collect::<Vec<Option<f64>>>(),
-
-        "sum" => buckets,
-
-        "count" => counts
-            .iter()
-            .map(|count| Some(*count as f64))
-            .collect::<Vec<Option<f64>>>(),
-
-        // We already checked for this
-        _ => unreachable!(),
-    };
-
-    if list_too_short {
-        Err(PolarsError::ComputeError(
-            "(aggregate_list_col_elementwise): One of the lists is shorter than the given list_size!".into(),
-        ))
-    } else {
-        Ok(Series::new(PlSmallStr::EMPTY, out).implode()?.into())
+    match inner_dtype {
+        DataType::Int8 => agg_i8(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::Int16 => agg_i16(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::Int32 => agg_i32(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::Int64 => agg_i64(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::UInt8 => agg_u8(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::UInt16 => agg_u16(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::UInt32 => agg_u32(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::UInt64 => agg_u64(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::Float32 => agg_f32(ca, &kwargs.aggregation, &inner_dtype),
+        DataType::Float64 => agg_f64(ca, &kwargs.aggregation, &inner_dtype),
+        _ => Err(PolarsError::ComputeError(
+            format!(
+                "(aggregate_list_col_elementwise): unsupported list inner dtype {:?}",
+                inner_dtype
+            )
+            .into(),
+        )),
     }
 }

@@ -32,38 +32,28 @@ df = (
         # Elementwise mean
         polist.aggregate_list_col_elementwise(
             "list_col",
-            list_size=1024,
             aggregation="mean",
         ).alias("list_col_mean"),
         # Elementwise sum
         polist.aggregate_list_col_elementwise(
             "list_col",
-            list_size=1024,
             aggregation="sum",
         ).alias("list_col_sum"),
         # Elementwise count
         polist.aggregate_list_col_elementwise(
             "list_col",
-            list_size=1024,
             aggregation="count",
         ).alias("list_col_count"),
-        # Elementwise mean but only for the first 2 elements of each list
-        polist.aggregate_list_col_elementwise(
-            "list_col",
-            list_size=2,
-            aggregation="mean",
-        ).alias("list_col_mean_shorter"),
     )
 )
 print(df)
 
-# shape: (1, 5)
-# ┌─────────┬────────────────┬───────────────┬───────────────┬───────────────┐
-# │ literal ┆ list_col_mean  ┆ list_col_sum  ┆ list_col_coun ┆ list_col_mean │
-# │ ---     ┆ ---            ┆ ---           ┆ t             ┆ _shorter      │
-# │ i32     ┆ list[f64]      ┆ list[f64]     ┆ ---           ┆ ---           │
-# │         ┆                ┆               ┆ list[f64]     ┆ list[f64]     │
-# ╞═════════╪════════════════╪═══════════════╪═══════════════╪═══════════════╡
-# │ 1       ┆ [null, 0.5, …  ┆ [null, 1.0, … ┆ [0.0, 2.0, …  ┆ [null, 0.5]   │
-# │         ┆ 0.0]           ┆ 0.0]          ┆ 2.0]          ┆               │
-# └─────────┴────────────────┴───────────────┴───────────────┴───────────────┘
+# shape: (1, 4)
+# ┌─────────┬────────────────┬───────────────┬────────────────┐
+# │ literal ┆ list_col_mean  ┆ list_col_sum  ┆ list_col_count │
+# │ ---     ┆ ---            ┆ ---           ┆ ---            │
+# │ i32     ┆ list[f64]      ┆ list[f64]     ┆ list[f64]      │
+# ╞═════════╪════════════════╪═══════════════╪════════════════╡
+# │ 1       ┆ [null, 0.5, …  ┆ [null, 1.0, … ┆ [0.0, 2.0, …   │
+# │         ┆ 0.0]           ┆ 0.0]          ┆ 2.0]           │
+# └─────────┴────────────────┴───────────────┴────────────────┘

@@ -9,3 +9,6 @@ venv
 .cargo/
 test.py
 .vscode/settings.json
+polars_list_utils/libpolars_list_utils.dylib.dSYM/Contents/Info.plist
+polars_list_utils/libpolars_list_utils.dylib.dSYM/Contents/Resources/DWARF/libpolars_list_utils.dylib
+polars_list_utils/libpolars_list_utils.dylib.dSYM/Contents/Resources/Relocations/aarch64/libpolars_list_utils.dylib.yml
