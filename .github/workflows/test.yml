@@ -23,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
+        id: setup-python
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -35,5 +36,7 @@ jobs:
       - name: Build extension and run tests
         shell: bash
         run: |
-          uv run maturin develop --uv
-          uv run pytest -q
+          "${{ steps.setup-python.outputs.python-path }}" -VV
+          uv venv --python "${{ steps.setup-python.outputs.python-path }}"
+          uv run --python "${{ steps.setup-python.outputs.python-path }}" maturin develop --uv
+          uv run --python "${{ steps.setup-python.outputs.python-path }}" pytest -q
