@@ -134,9 +134,13 @@ jobs:
           path: dist/*.whl
 
   manylinux:
-    name: manylinux wheel
+    name: manylinux wheel / ${{ matrix.target }}
     needs: test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
 
@@ -146,7 +150,7 @@ jobs:
       - name: Build manylinux wheel
         uses: PyO3/maturin-action@v1
         with:
-          target: x86_64
+          target: ${{ matrix.target }}
           manylinux: 2014
           args: --release --out dist
           sccache: true
@@ -154,5 +158,5 @@ jobs:
       - name: Upload manylinux wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-manylinux-x86_64
+          name: wheels-manylinux-${{ matrix.target }}
           path: dist/*.whl
