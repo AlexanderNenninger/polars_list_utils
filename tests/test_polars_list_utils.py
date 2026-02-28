@@ -36,6 +36,61 @@ def test_inner_join_lists_basic_and_null_rows() -> None:
     ).item(), "All joined elements from y should be in x"
 
 
+def test_left_join_lists_basic() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [[10, 20, 30], [None, 1], None],
+            "y": [[20, 30, 40], [None, 2], [1]],
+        }
+    )
+
+    out = (
+        df.with_columns(
+            polist.left_join_lists("x", "y", join_nulls=False)
+            .struct.unnest()
+            .name.suffix("_idx"),
+        )
+        .select("x_idx", "y_idx")
+        .to_dict(as_series=False)
+    )
+
+    assert out["x_idx"] == [[0, 1, 2], [0, 1], None]
+    assert out["y_idx"] == [[None, 0, 1], [None, None], None]
+
+
+def test_outer_join_lists_and_null_matching() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [[10, 20, 30], [None, 1], None],
+            "y": [[20, 30, 40], [None, 2], [1]],
+        }
+    )
+
+    out_no_null_match = (
+        df.with_columns(
+            polist.outer_join_lists("x", "y", join_nulls=False)
+            .struct.unnest()
+            .name.suffix("_idx"),
+        )
+        .select("x_idx", "y_idx")
+        .to_dict(as_series=False)
+    )
+    assert out_no_null_match["x_idx"] == [[0, 1, 2, None], [0, 1, None, None], None]
+    assert out_no_null_match["y_idx"] == [[None, 0, 1, 2], [None, None, 0, 1], None]
+
+    out_with_null_match = (
+        df.with_columns(
+            polist.outer_join_lists("x", "y", join_nulls=True)
+            .struct.unnest()
+            .name.suffix("_idx"),
+        )
+        .select("x_idx", "y_idx")
+        .to_dict(as_series=False)
+    )
+    assert out_with_null_match["x_idx"] == [[0, 1, 2, None], [0, 1, None], None]
+    assert out_with_null_match["y_idx"] == [[None, 0, 1, 2], [0, None, 1], None]
+
+
 def test_argsort_list_basic() -> None:
     df = pl.DataFrame(
         {

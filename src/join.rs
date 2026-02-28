@@ -148,6 +148,91 @@ struct ListInnerJoinKwargs {
     join_nulls: bool,
 }
 
+#[derive(Deserialize)]
+struct ListLeftJoinKwargs {
+    join_nulls: bool,
+}
+
+#[derive(Deserialize)]
+struct ListOuterJoinKwargs {
+    join_nulls: bool,
+}
+
+#[derive(Clone, Copy)]
+enum ListJoinMode {
+    Left,
+    Outer,
+}
+
+fn any_value_eq(
+    left: &AnyValue<'_>,
+    right: &AnyValue<'_>,
+    join_nulls: bool,
+) -> bool {
+    if left.is_null() || right.is_null() {
+        join_nulls && left.is_null() && right.is_null()
+    } else {
+        left == right
+    }
+}
+
+fn compute_list_join_indices(
+    left: &Series,
+    right: &Series,
+    join_nulls: bool,
+    mode: ListJoinMode,
+) -> PolarsResult<(Vec<Option<u32>>, Vec<Option<u32>>)> {
+    if left.dtype() != right.dtype() {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "(list_join): list element dtypes must match, got left={:?}, right={:?}",
+                left.dtype(),
+                right.dtype()
+            )
+            .into(),
+        ));
+    }
+
+    let right_vals: Vec<(u32, AnyValue<'static>)> = right
+        .iter()
+        .enumerate()
+        .map(|(idx, v)| (idx as u32, v.into_static()))
+        .collect();
+    let mut matched_right = vec![false; right_vals.len()];
+
+    let mut left_keys: Vec<Option<u32>> = Vec::new();
+    let mut right_keys: Vec<Option<u32>> = Vec::new();
+
+    for (left_idx, left_val) in left.iter().enumerate() {
+        let mut found = false;
+
+        for (right_pos, (right_idx, right_val)) in right_vals.iter().enumerate() {
+            if any_value_eq(&left_val, right_val, join_nulls) {
+                found = true;
+                matched_right[right_pos] = true;
+                left_keys.push(Some(left_idx as u32));
+                right_keys.push(Some(*right_idx));
+            }
+        }
+
+        if !found {
+            left_keys.push(Some(left_idx as u32));
+            right_keys.push(None);
+        }
+    }
+
+    if matches!(mode, ListJoinMode::Outer) {
+        for (right_pos, (right_idx, _)) in right_vals.iter().enumerate() {
+            if !matched_right[right_pos] {
+                left_keys.push(None);
+                right_keys.push(Some(*right_idx));
+            }
+        }
+    }
+
+    Ok((left_keys, right_keys))
+}
+
 /// Get the indices of the elements in list x, that are equal to the corresponding elements in list y.
 /// The function returns a `List` column containing the indices of the elements in `x` that are equal to the corresponding elements in `y`.
 /// This can be used to join two `List` columns on the values of the inner lists, by first getting the indices of the matching values and then
@@ -204,6 +289,104 @@ fn expr_inner_join_lists(
             right_indices_builder.finish().into_series(),
         ]
         .iter(),
+    )?;
+
+    Ok(out.into_series())
+}
+
+/// Get left-join index pairs for two list columns.
+///
+/// Returns a `Struct` with two `List[u32]` fields containing row-local element
+/// indices. Unmatched right-side elements are represented as null indices in
+/// the right index list.
+#[polars_expr(output_type_func=struct_list_u32_dtype)]
+fn expr_left_join_lists(
+    inputs: &[Series],
+    kwargs: ListLeftJoinKwargs,
+) -> PolarsResult<Series> {
+    let left = inputs[0].list()?;
+    let right = inputs[1].list()?;
+
+    let mut left_rows: Vec<Option<Series>> = Vec::with_capacity(left.len());
+    let mut right_rows: Vec<Option<Series>> = Vec::with_capacity(right.len());
+
+    for (left_row, right_row) in left.amortized_iter().zip(right.amortized_iter()) {
+        if let (Some(left_row), Some(right_row)) = (left_row, right_row) {
+            let left_row = left_row.as_ref();
+            let right_row = right_row.as_ref();
+            let (left_idx, right_idx) = compute_list_join_indices(
+                left_row,
+                right_row,
+                kwargs.join_nulls,
+                ListJoinMode::Left,
+            )?;
+
+            left_rows.push(Some(Series::new(PlSmallStr::EMPTY, left_idx)));
+            right_rows.push(Some(Series::new(PlSmallStr::EMPTY, right_idx)));
+        } else {
+            left_rows.push(None);
+            right_rows.push(None);
+        }
+    }
+
+    let mut left_series = ListChunked::from_iter(left_rows).into_series();
+    let mut right_series = ListChunked::from_iter(right_rows).into_series();
+    left_series.rename(left.name().clone());
+    right_series.rename(right.name().clone());
+
+    let out = StructChunked::from_series(
+        left.name().clone(),
+        left.len(),
+        [left_series, right_series].iter(),
+    )?;
+
+    Ok(out.into_series())
+}
+
+/// Get outer-join index pairs for two list columns.
+///
+/// Returns a `Struct` with two `List[u32]` fields containing row-local element
+/// indices. Unmatched elements on either side are represented as null indices
+/// on the opposite side.
+#[polars_expr(output_type_func=struct_list_u32_dtype)]
+fn expr_outer_join_lists(
+    inputs: &[Series],
+    kwargs: ListOuterJoinKwargs,
+) -> PolarsResult<Series> {
+    let left = inputs[0].list()?;
+    let right = inputs[1].list()?;
+
+    let mut left_rows: Vec<Option<Series>> = Vec::with_capacity(left.len());
+    let mut right_rows: Vec<Option<Series>> = Vec::with_capacity(right.len());
+
+    for (left_row, right_row) in left.amortized_iter().zip(right.amortized_iter()) {
+        if let (Some(left_row), Some(right_row)) = (left_row, right_row) {
+            let left_row = left_row.as_ref();
+            let right_row = right_row.as_ref();
+            let (left_idx, right_idx) = compute_list_join_indices(
+                left_row,
+                right_row,
+                kwargs.join_nulls,
+                ListJoinMode::Outer,
+            )?;
+
+            left_rows.push(Some(Series::new(PlSmallStr::EMPTY, left_idx)));
+            right_rows.push(Some(Series::new(PlSmallStr::EMPTY, right_idx)));
+        } else {
+            left_rows.push(None);
+            right_rows.push(None);
+        }
+    }
+
+    let mut left_series = ListChunked::from_iter(left_rows).into_series();
+    let mut right_series = ListChunked::from_iter(right_rows).into_series();
+    left_series.rename(left.name().clone());
+    right_series.rename(right.name().clone());
+
+    let out = StructChunked::from_series(
+        left.name().clone(),
+        left.len(),
+        [left_series, right_series].iter(),
     )?;
 
     Ok(out.into_series())

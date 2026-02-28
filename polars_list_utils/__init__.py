@@ -149,6 +149,38 @@ def inner_join_lists(
     )
 
 
+def left_join_lists(
+    list_column_left: Union[pl.Expr, str, pl.Series],
+    list_column_right: Union[pl.Expr, str, pl.Series],
+    join_nulls: bool = False,
+) -> pl.Expr:
+    return register_plugin_function(
+        args=[list_column_left, list_column_right],
+        kwargs={
+            "join_nulls": join_nulls,
+        },
+        plugin_path=root_path,
+        function_name="expr_left_join_lists",
+        is_elementwise=True,
+    )
+
+
+def outer_join_lists(
+    list_column_left: Union[pl.Expr, str, pl.Series],
+    list_column_right: Union[pl.Expr, str, pl.Series],
+    join_nulls: bool = False,
+) -> pl.Expr:
+    return register_plugin_function(
+        args=[list_column_left, list_column_right],
+        kwargs={
+            "join_nulls": join_nulls,
+        },
+        plugin_path=root_path,
+        function_name="expr_outer_join_lists",
+        is_elementwise=True,
+    )
+
+
 def asof_join_lists(
     list_column_left: Union[pl.Expr, str, pl.Series],
     list_column_right: Union[pl.Expr, str, pl.Series],
