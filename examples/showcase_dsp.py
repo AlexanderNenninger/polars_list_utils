@@ -8,7 +8,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from polars_list_utils._internal import __version__ as __version__
+
 print(__version__)
+
 
 def generate_sine_wave(
     freq: list[Union[int, float]],
@@ -22,96 +24,102 @@ def generate_sine_wave(
     return y
 
 
-Fs = 200        # Sample-rate [Hz]
-t = 6           # Sample-duration [s]
+Fs = 200  # Sample-rate [Hz]
+t = 6  # Sample-duration [s]
 
-N = 1024        # Signals bins at nearest power of two [-]
-n = (N / 2) + 1 # Spectrum bins resulting from (real-valued) FFT [-]
+N = 1024  # Signals bins at nearest power of two [-]
+n = (N / 2) + 1  # Spectrum bins resulting from (real-valued) FFT [-]
 
-fmax_i = 10     # Maximum frequency for interpolation [Hz]
+fmax_i = 10  # Maximum frequency for interpolation [Hz]
 
 
 df_plot = (
     # Create a DataFrame with some dummy signals (generated sine waves)
-    pl.DataFrame({
-        'S': [
-            [e for e in generate_sine_wave([1], Fs, t)[:N]],
-            [e for e in generate_sine_wave([10], Fs, t)[:N]],
-            [e for e in generate_sine_wave([40], Fs, t)[:N]],
-            [e for e in generate_sine_wave([65], Fs, t)[:N]],
-            [e for e in generate_sine_wave([80], Fs, t)[:N]],
-            [e for e in generate_sine_wave([80, 60, 40, 10], Fs, t)[:N]],
-        ],
-        # Note some frequencies to normalize by later
-        'f': [1.0, 10.0, 40.0, 65.0, 80.0, 10.0],
-    })
+    pl.DataFrame(
+        {
+            "S": [
+                [e for e in generate_sine_wave([1], Fs, t)[:N]],
+                [e for e in generate_sine_wave([10], Fs, t)[:N]],
+                [e for e in generate_sine_wave([40], Fs, t)[:N]],
+                [e for e in generate_sine_wave([65], Fs, t)[:N]],
+                [e for e in generate_sine_wave([80], Fs, t)[:N]],
+                [e for e in generate_sine_wave([80, 60, 40, 10], Fs, t)[:N]],
+            ],
+            # Note some frequencies to normalize by later
+            "f": [1.0, 10.0, 40.0, 65.0, 80.0, 10.0],
+        }
+    )
     # Transform the signal and skip FFT (to plot it later)
     .with_columns(
         polist.apply_fft(
-            list_column='S',        # Signal
+            list_column="S",  # Signal
             sample_rate=Fs,
             window="hanning",
             bp_min=0,
             bp_max=Fs / 2,
             bp_ord=4,
             skip_fft=True,
-        ).alias('S_t'),             # Signal transformed
+        ).alias("S_t"),  # Signal transformed
     )
     # Transform the signal and compute the FFT
     .with_columns(
         polist.apply_fft(
-            list_column='S',        # Signal
+            list_column="S",  # Signal
             sample_rate=Fs,
             window="hanning",
             bp_min=0,
             bp_max=Fs / 2,
             bp_ord=4,
             norm="window",
-        ).alias('A'),               # FFT Amplitude
+        ).alias("A"),  # FFT Amplitude
     )
     # Compute the corresponding frequencies for the FFT amplitudes
     .with_columns(
-        pl.lit(polist.fft_freqs(
-            n=int(n),
-            fs=Fs,
-        )).alias('F')               # FFT Frequency
+        pl.lit(
+            polist.fft_freqs(
+                n=int(n),
+                fs=Fs,
+            )
+        ).alias("F")  # FFT Frequency
     )
     # Normalize the FFT frequencies by their average frequency
     .with_columns(
         polist.operate_scalar_on_list(
-            list_column='F',        # FFT Frequency
-            scalar_column='f',      # Frequency to normalize by
-            operation='div',
-        ).alias('F_n'),             # Normalized FFT Frequency
+            list_column="F",  # FFT Frequency
+            scalar_column="f",  # Frequency to normalize by
+            operation="div",
+        ).alias("F_n"),  # Normalized FFT Frequency
     )
     # Compute the average amplitude of frequencies lower than the
     # first harmonic, but excluding the DC component
     .with_columns(
         polist.mean_of_range(
-            list_column_y='A',      # FFT Amplitude
-            list_column_x='F_n',    # Normalized FFT Frequency
+            list_column_y="A",  # FFT Amplitude
+            list_column_x="F_n",  # Normalized FFT Frequency
             # Take y_values where x_axis is in [0, 1)
             x_min=0,
             x_max=1,
             # Skip the first index (DC component)
             x_min_idx_offset=1,
-        ).alias('Avg(A_n[0:1])'),   # Average amplitude before the first harmonic
-    )                               # (DC component excluded)
+        ).alias("Avg(A_n[0:1])"),  # Average amplitude before the first harmonic
+    )  # (DC component excluded)
     # Interpolate the FFT amplitudes to a common x-axis of normalized
     # frequencies (e.g. a linear space from 0 to 10) for easier plotting
     # and aggregating
     .with_columns(
-        pl.lit(polist.fft_freqs_linspace(
-            fnum=int(n),
-            fmax=fmax_i,
-        )).alias('F_i')             # FFT Frequency to interpolate to
+        pl.lit(
+            polist.fft_freqs_linspace(
+                fnum=int(n),
+                fmax=fmax_i,
+            )
+        ).alias("F_i")  # FFT Frequency to interpolate to
     )
     .with_columns(
         polist.interpolate_columns(
-            x_data='F_n',           # Normalized FFT Frequency
-            y_data='A',             # FFT Amplitude
-            x_interp='F_i',         # FFT Frequency to interpolate to
-        ).alias('A_i')              # Interpolated FFT Amplitude
+            x_data="F_n",  # Normalized FFT Frequency
+            y_data="A",  # FFT Amplitude
+            x_interp="F_i",  # FFT Frequency to interpolate to
+        ).alias("A_i")  # Interpolated FFT Amplitude
     )
 )
 with pl.Config(tbl_cols=-1):
@@ -138,13 +146,15 @@ with pl.Config(tbl_cols=-1):
 # │ 0.584503]         ┆      ┆ 0.000006]          ┆ 5.6825e…                  ┆ 100.0]             ┆                           ┆               ┆                          ┆ 5.6825e…                 │
 # └───────────────────┴──────┴────────────────────┴───────────────────────────┴────────────────────┴───────────────────────────┴───────────────┴──────────────────────────┴──────────────────────────┘
 
-print(df_plot.with_columns(
-    pl.col("F").list.len().alias("F_len"),
-    pl.col("A").list.len().alias("A_len"),
-    pl.col("F_i").list.len().alias("F_i_len"),
-    pl.col("A_i").list.len().alias("A_i_len"),
-    pl.col("S").list.len().alias("S_len"),
-).select(cs.ends_with("_len")))
+print(
+    df_plot.with_columns(
+        pl.col("F").list.len().alias("F_len"),
+        pl.col("A").list.len().alias("A_len"),
+        pl.col("F_i").list.len().alias("F_i_len"),
+        pl.col("A_i").list.len().alias("A_i_len"),
+        pl.col("S").list.len().alias("S_len"),
+    ).select(cs.ends_with("_len"))
+)
 
 # ┌───────┬───────┬─────────┬─────────┬───────┐
 # │ F_len ┆ A_len ┆ F_i_len ┆ A_i_len ┆ S_len │
@@ -167,24 +177,24 @@ fig, axs = plt.subplots(
 )
 for i in range(len(df_plot)):
     axs[0][i].plot(
-        np.arange(0, N) / Fs,           # Time axis [s]
-        df_plot[i, 'S_t'].to_numpy(),   # Signal in time domain [-]
+        np.arange(0, N) / Fs,  # Time axis [s]
+        df_plot[i, "S_t"].to_numpy(),  # Signal in time domain [-]
     )
 
     axs[1][i].plot(
-        df_plot[i, 'F'].to_numpy(),     # Frequency axis [Hz]
-        df_plot[i, 'A'].to_numpy(),     # Amplitude of the FFT [-]
+        df_plot[i, "F"].to_numpy(),  # Frequency axis [Hz]
+        df_plot[i, "A"].to_numpy(),  # Amplitude of the FFT [-]
     )
     axs[1][i].set_xticks(
         np.arange(0, Fs // 2 + 1, 10),  # Plot x-axis till Nyquist frequency [Hz]
     )
 
     axs[2][i].plot(
-        df_plot[i, 'F_i'].to_numpy(),   # Normalized frequency axis [Hz]
-        df_plot[i, 'A_i'].to_numpy(),   # Interpolated amplitude of the FFT [-]
+        df_plot[i, "F_i"].to_numpy(),  # Normalized frequency axis [Hz]
+        df_plot[i, "A_i"].to_numpy(),  # Interpolated amplitude of the FFT [-]
     )
     axs[2][i].set_xticks(
-        np.arange(0, fmax_i + 1, 1),    # Plot x-axis till maximum interpolated [Hz]
+        np.arange(0, fmax_i + 1, 1),  # Plot x-axis till maximum interpolated [Hz]
     )
 plt.tight_layout()
 plt.savefig(Path.cwd() / "examples" / "showcase_dsp.png")

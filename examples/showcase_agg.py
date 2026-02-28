@@ -3,13 +3,15 @@ import polars as pl
 import polars_list_utils as polist
 
 
-df = pl.DataFrame({
-    'list_col': [
-        [None] + [0.0] * 1023,
-        [np.nan] + [1.0] + [0.0] * 1022,
-        [np.nan] * 1024,
-    ]
-})
+df = pl.DataFrame(
+    {
+        "list_col": [
+            [None] + [0.0] * 1023,
+            [np.nan] + [1.0] + [0.0] * 1022,
+            [np.nan] * 1024,
+        ]
+    }
+)
 print(df)
 
 # shape: (3, 1)
@@ -26,32 +28,31 @@ print(df)
 df = (
     df
     # Single group
-    .group_by(pl.lit(1))
-    .agg(
+    .group_by(pl.lit(1)).agg(
         # Elementwise mean
         polist.aggregate_list_col_elementwise(
-            'list_col',
+            "list_col",
             list_size=1024,
             aggregation="mean",
-        ).alias('list_col_mean'),
+        ).alias("list_col_mean"),
         # Elementwise sum
         polist.aggregate_list_col_elementwise(
-            'list_col',
+            "list_col",
             list_size=1024,
             aggregation="sum",
-        ).alias('list_col_sum'),
+        ).alias("list_col_sum"),
         # Elementwise count
         polist.aggregate_list_col_elementwise(
-            'list_col',
+            "list_col",
             list_size=1024,
             aggregation="count",
-        ).alias('list_col_count'),
+        ).alias("list_col_count"),
         # Elementwise mean but only for the first 2 elements of each list
         polist.aggregate_list_col_elementwise(
-            'list_col',
+            "list_col",
             list_size=2,
             aggregation="mean",
-        ).alias('list_col_mean_shorter'),
+        ).alias("list_col_mean_shorter"),
     )
 )
 print(df)
