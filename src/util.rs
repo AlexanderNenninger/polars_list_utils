@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use polars::{prelude::*, series::amortized_iter::AmortSeries};
 use pyo3_polars::export::polars_core::utils::align_chunks_binary;
 
@@ -11,6 +13,32 @@ pub fn list_f64_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
     Ok(Field::new(
         input_fields[0].name.clone(),
         DataType::List(Box::new(DataType::Float64)),
+    ))
+}
+
+pub fn list_u32_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new(
+        input_fields[0].name.clone(),
+        DataType::List(Box::new(DataType::UInt32)),
+    ))
+}
+
+/// For two list columns, return a struct with the same field names but with list of u32 dtype.
+pub fn struct_list_u32_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
+    let left_name = input_fields[0].name.clone();
+    let right_name = input_fields[1].name.clone();
+    let left_dtype = DataType::List(Box::new(DataType::UInt32));
+    let right_dtype = DataType::List(Box::new(DataType::UInt32));
+
+    Ok(Field::new(
+        input_fields[0].name.clone(),
+        DataType::Struct(
+            [
+                Field::new(left_name, left_dtype),
+                Field::new(right_name, right_dtype),
+            ]
+            .into(),
+        ),
     ))
 }
 

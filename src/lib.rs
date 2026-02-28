@@ -1,10 +1,15 @@
+#![allow(unused_imports)]
+
 mod agg;
 mod dsp;
 mod dsp_util;
 mod feat;
+mod join;
 mod op;
 mod util;
 use dsp_util::{fft_freqs, fft_freqs_linspace};
+use join::*;
+use op::*;
 use {pyo3::prelude::*, pyo3_polars::PolarsAllocator};
 
 #[global_allocator]

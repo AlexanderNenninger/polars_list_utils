@@ -1,4 +1,4 @@
-use crate::util::list_f64_dtype;
+use crate::util::{list_f64_dtype, list_u32_dtype, struct_list_u32_dtype};
 use interp::{InterpMode, interp_slice};
 use polars::prelude::*;
 use pyo3_polars::{
@@ -138,4 +138,55 @@ fn expr_interpolate_columns(inputs: &[Series]) -> PolarsResult<Series> {
         .collect();
 
     Ok(out.into_series())
+}
+
+#[derive(Deserialize, Clone, Copy)]
+pub struct ArgsortListKwargs {
+    descending: bool,
+    nulls_last: bool,
+    maintain_order: bool,
+    limit: Option<u32>,
+}
+
+impl From<ArgsortListKwargs> for SortOptions {
+    fn from(kwargs: ArgsortListKwargs) -> Self {
+        SortOptions {
+            descending: kwargs.descending,
+            nulls_last: kwargs.nulls_last,
+            maintain_order: kwargs.maintain_order,
+            multithreaded: false, // Threading already happens at the chunk level.
+            limit: kwargs.limit,  // Use the limit provided in the kwargs
+        }
+    }
+}
+
+/// Get the indices of the elements in list x, that would sort x.
+/// The function returns a `List` column containing the indices of the elements in `x` that would sort `x`.
+/// ## Parameters
+/// - `x`: The `List` column containing the x-coords of the data.
+/// - `descending`: Whether to sort in descending order.
+///## Return value
+/// New `List[u32]` column with the indices of the elements that would sort `x`.
+#[polars_expr(output_type_func=list_u32_dtype)]
+pub fn expr_arg_sort_list(
+    inputs: &[Series],
+    kwargs: ArgsortListKwargs,
+) -> PolarsResult<Series> {
+    let x = inputs[0].list()?;
+    let mut builder = ListPrimitiveChunkedBuilder::<UInt32Type>::new(
+        x.name().clone(),
+        x.len(),
+        x.len(),
+        DataType::UInt32,
+    );
+    for item in x.amortized_iter() {
+        if let Some(item) = item {
+            let item = item.as_ref();
+            let argsorted = item.arg_sort(kwargs.into()).into_series();
+            builder.append_series(&argsorted)?;
+        } else {
+            builder.append_null();
+        }
+    }
+    Ok(builder.finish().into_series())
 }

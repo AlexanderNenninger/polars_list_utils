@@ -4,8 +4,8 @@ from typing import Optional, Union, Literal
 import polars as pl
 from polars.plugins import register_plugin_function
 
-from polars_list_utils._internal import __version__ as __version__
-from polars_list_utils._internal import fft_freqs, fft_freqs_linspace  # noqa: F401
+from polars_list_utils._internal import __version__ as __version__  # ty:ignore[unresolved-import]
+from polars_list_utils._internal import fft_freqs, fft_freqs_linspace  # noqa: F401  # ty:ignore[unresolved-import]
 
 root_path = Path(__file__).parent
 
@@ -131,5 +131,60 @@ def mean_of_range(
         },
         plugin_path=root_path,
         function_name="expr_agg_of_range",
+        is_elementwise=True,
+    )
+
+
+def inner_join_lists(
+    list_column_left: Union[pl.Expr, str, pl.Series],
+    list_column_right: Union[pl.Expr, str, pl.Series],
+    join_nulls: bool = False,
+) -> pl.Expr:
+    return register_plugin_function(
+        args=[list_column_left, list_column_right],
+        kwargs={
+            "join_nulls": join_nulls,
+        },
+        plugin_path=root_path,
+        function_name="expr_inner_join_lists",
+        is_elementwise=True,
+    )
+
+
+def asof_join_lists(
+    list_column_left: Union[pl.Expr, str, pl.Series],
+    list_column_right: Union[pl.Expr, str, pl.Series],
+    tolerance: Optional[float] = None,
+    strategy: Literal["backward", "forward", "nearest"] = "backward",
+) -> pl.Expr:
+    return register_plugin_function(
+        args=[list_column_left, list_column_right],
+        kwargs={
+            "tolerance": tolerance,
+            "strategy": strategy,
+        },
+        plugin_path=root_path,
+        function_name="expr_asof_join_lists",
+        is_elementwise=True,
+    )
+
+
+def arg_sort_list(
+    list_column: Union[pl.Expr, str, pl.Series],
+    descending: bool = False,
+    nulls_last: bool = False,
+    maintain_order: bool = False,
+    limit: Optional[int] = None,
+) -> pl.Expr:
+    return register_plugin_function(
+        args=[list_column],
+        kwargs={
+            "descending": descending,
+            "nulls_last": nulls_last,
+            "maintain_order": maintain_order,
+            "limit": limit,
+        },
+        plugin_path=root_path,
+        function_name="expr_arg_sort_list",
         is_elementwise=True,
     )
