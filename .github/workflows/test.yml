@@ -43,6 +43,8 @@ jobs:
           "${{ steps.setup-python.outputs.python-path }}" -VV
           uv venv --python "${{ steps.setup-python.outputs.python-path }}"
           uv run --python "${{ steps.setup-python.outputs.python-path }}" maturin develop --uv
+          uv run --python "${{ steps.setup-python.outputs.python-path }}" ruff check .
+          uv run --python "${{ steps.setup-python.outputs.python-path }}" ty check
           uv run --python "${{ steps.setup-python.outputs.python-path }}" pytest -q
 
       - name: Build wheel
