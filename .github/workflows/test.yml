@@ -31,6 +31,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
@@ -74,6 +77,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -83,6 +89,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
+          sccache: true
 
       - name: Upload macOS wheel artifact
         uses: actions/upload-artifact@v4
@@ -105,6 +112,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -115,6 +125,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
+          sccache: true
 
       - name: Upload Windows wheel artifact
         uses: actions/upload-artifact@v4
@@ -129,12 +140,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - name: Build manylinux wheel
         uses: PyO3/maturin-action@v1
         with:
           target: x86_64
           manylinux: 2014
           args: --release --out dist
+          sccache: true
 
       - name: Upload manylinux wheel artifact
         uses: actions/upload-artifact@v4
