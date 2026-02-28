@@ -101,6 +101,88 @@ def interpolate_columns(
     )
 
 
+def fill_missing_list(
+    list_column: Union[pl.Expr, str, pl.Series],
+    method: Literal["forward", "backward"] = "forward",
+    limit: Optional[int] = None,
+) -> pl.Expr:
+    """Fill missing values in list rows with forward/backward propagation.
+
+    Missing values include nulls and NaNs.
+
+    Args:
+        list_column: Input list column expression.
+        method: Fill direction, either "forward" or "backward".
+        limit: Optional maximum consecutive missing values to fill.
+
+    Returns:
+        A Polars expression producing filled `List[f64]` rows.
+    """
+    return register_plugin_function(
+        args=[list_column],
+        kwargs={
+            "method": method,
+            "limit": limit,
+        },
+        plugin_path=root_path,
+        function_name="expr_fill_missing_list",
+        is_elementwise=True,
+    )
+
+
+def interpolate_missing_list(
+    list_column: Union[pl.Expr, str, pl.Series],
+    mode: Literal["linear", "nearest", "first_last"] = "linear",
+) -> pl.Expr:
+    """Interpolate missing values inside each list row.
+
+    Missing values include nulls and NaNs.
+
+    Args:
+        list_column: Input list column expression.
+        mode: Interpolation mode: "linear", "nearest", or "first_last".
+
+    Returns:
+        A Polars expression producing interpolated `List[f64]` rows.
+    """
+    return register_plugin_function(
+        args=[list_column],
+        kwargs={
+            "mode": mode,
+        },
+        plugin_path=root_path,
+        function_name="expr_interpolate_missing_list",
+        is_elementwise=True,
+    )
+
+
+def missing_gap_flags(
+    list_column: Union[pl.Expr, str, pl.Series],
+    min_gap: int = 1,
+) -> pl.Expr:
+    """Flag missing-value gaps in each list row.
+
+    Missing values include nulls and NaNs. A position is flagged `True` when it
+    belongs to a consecutive missing run whose length is at least `min_gap`.
+
+    Args:
+        list_column: Input list column expression.
+        min_gap: Minimum consecutive missing run length to flag.
+
+    Returns:
+        A Polars expression producing `List[bool]` flags.
+    """
+    return register_plugin_function(
+        args=[list_column],
+        kwargs={
+            "min_gap": min_gap,
+        },
+        plugin_path=root_path,
+        function_name="expr_missing_gap_flags",
+        is_elementwise=True,
+    )
+
+
 def aggregate_list_col_elementwise(
     list_column: Union[pl.Expr, str, pl.Series],
     aggregation: Literal["mean", "sum", "count", "product", "gmean"] = "mean",

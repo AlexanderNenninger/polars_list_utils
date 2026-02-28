@@ -23,6 +23,13 @@ pub fn list_u32_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
     ))
 }
 
+pub fn list_bool_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new(
+        input_fields[0].name.clone(),
+        DataType::List(Box::new(DataType::Boolean)),
+    ))
+}
+
 /// For two list columns, return a struct with the same field names but with list of u32 dtype.
 pub fn struct_list_u32_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
     let left_name = input_fields[0].name.clone();

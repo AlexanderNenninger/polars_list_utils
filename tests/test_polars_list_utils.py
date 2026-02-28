@@ -374,6 +374,77 @@ def test_interpolate_columns_basic() -> None:
     ]
 
 
+def test_fill_missing_list_forward_backward_with_limit() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [
+                [1.0, None, None, 4.0, float("nan"), 5.0],
+                [None, 2.0, None],
+                None,
+            ]
+        }
+    )
+
+    out = df.with_columns(
+        ffill=polist.fill_missing_list("x", method="forward", limit=1),
+        bfill=polist.fill_missing_list("x", method="backward", limit=1),
+    )
+
+    assert out.get_column("ffill").to_list() == [
+        [1.0, 1.0, None, 4.0, 4.0, 5.0],
+        [None, 2.0, 2.0],
+        None,
+    ]
+    assert out.get_column("bfill").to_list() == [
+        [1.0, None, 4.0, 4.0, 5.0, 5.0],
+        [2.0, 2.0, None],
+        None,
+    ]
+
+
+def test_interpolate_missing_list_modes() -> None:
+    df = pl.DataFrame({"x": [[1.0, None, 3.0, None, None, 9.0, None], None]})
+
+    out = df.with_columns(
+        linear=polist.interpolate_missing_list("x", mode="linear"),
+        nearest=polist.interpolate_missing_list("x", mode="nearest"),
+        first_last=polist.interpolate_missing_list("x", mode="first_last"),
+    )
+
+    assert out.get_column("linear").to_list() == [
+        [1.0, 2.0, 3.0, 5.0, 7.0, 9.0, None],
+        None,
+    ]
+    assert out.get_column("nearest").to_list() == [
+        [1.0, 1.0, 3.0, 3.0, 9.0, 9.0, 9.0],
+        None,
+    ]
+    assert out.get_column("first_last").to_list() == [
+        [1.0, 2.0, 3.0, 5.0, 7.0, 9.0, 9.0],
+        None,
+    ]
+
+
+def test_missing_gap_flags_min_gap() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [
+                [1.0, None, None, 4.0, None, 5.0, float("nan"), float("nan")],
+                [None, None, 1.0],
+                None,
+            ]
+        }
+    )
+
+    out = df.with_columns(flags=polist.missing_gap_flags("x", min_gap=2))
+
+    assert out.get_column("flags").to_list() == [
+        [False, True, True, False, False, False, True, True],
+        [True, True, False],
+        None,
+    ]
+
+
 def test_aggregate_list_col_elementwise_from_example_pattern() -> None:
     df = pl.DataFrame(
         {
