@@ -91,6 +91,67 @@ def test_outer_join_lists_and_null_matching() -> None:
     assert out_with_null_match["y_idx"] == [[None, 0, 1, 2], [0, None, 1], None]
 
 
+def test_left_join_lists_with_literal_argument() -> None:
+    df = pl.DataFrame({"x": [[10, 20, 30], [30, 40], None]})
+
+    out = (
+        df.with_columns(
+            polist.left_join_lists(
+                "x", pl.lit([20, 30, 50]).alias("y_lit"), join_nulls=False
+            )
+            .struct.unnest()
+            .name.suffix("_idx")
+        )
+        .select("x_idx", "y_lit_idx")
+        .to_dict(as_series=False)
+    )
+
+    assert out["x_idx"] == [[0, 1, 2], [0, 1], None]
+    assert out["y_lit_idx"] == [[None, 0, 1], [1, None], None]
+
+
+def test_outer_join_lists_with_literal_argument() -> None:
+    df = pl.DataFrame({"x": [[10, 20, 30], [30, 40], None]})
+
+    out = (
+        df.with_columns(
+            polist.outer_join_lists(
+                "x", pl.lit([20, 30, 50]).alias("y_lit"), join_nulls=False
+            )
+            .struct.unnest()
+            .name.suffix("_idx")
+        )
+        .select("x_idx", "y_lit_idx")
+        .to_dict(as_series=False)
+    )
+
+    assert out["x_idx"] == [[0, 1, 2, None], [0, 1, None, None], None]
+    assert out["y_lit_idx"] == [[None, 0, 1, 2], [1, None, 0, 2], None]
+
+
+def test_inner_join_lists_with_literal_argument() -> None:
+    df = pl.DataFrame({"x": [[10, 20, 30], [30, 40], None]})
+
+    out = (
+        df.with_columns(
+            polist.inner_join_lists(
+                "x", pl.lit([20, 30, 50]).alias("y_lit"), join_nulls=False
+            )
+            .struct.unnest()
+            .name.suffix("_idx")
+        )
+        .with_columns(
+            x_joined=pl.col("x").list.gather(pl.col("x_idx")),
+        )
+        .select("x_idx", "y_lit_idx", "x_joined")
+        .to_dict(as_series=False)
+    )
+
+    assert out["x_idx"] == [[1, 2], [0], None]
+    assert out["y_lit_idx"] == [[0, 1], [1], None]
+    assert out["x_joined"] == [[20, 30], [30], None]
+
+
 def test_argsort_list_basic() -> None:
     df = pl.DataFrame(
         {
@@ -151,6 +212,27 @@ def test_asof_join_lists_strategies() -> None:
     assert nearest["y_idx"] == [[0, 1, 3], [1], None]
 
 
+def test_asof_join_lists_with_literal_argument() -> None:
+    df = pl.DataFrame({"x": [[1.0, 2.5, 4.1, None], [5.0], None]})
+
+    out = (
+        df.with_columns(
+            polist.asof_join_lists(
+                "x",
+                pl.lit([1.0, 2.0, 3.0, 5.0]).alias("y_lit"),
+                strategy="nearest",
+            )
+            .struct.unnest()
+            .name.suffix("_idx"),
+        )
+        .select("x_idx", "y_lit_idx")
+        .to_dict(as_series=False)
+    )
+
+    assert out["x_idx"] == [[0, 1, 2], [0], None]
+    assert out["y_lit_idx"] == [[0, 1, 3], [3], None]
+
+
 def test_list_zip_basic_and_dtype() -> None:
     df = pl.DataFrame(
         {
@@ -204,6 +286,32 @@ def test_list_zip_with_padding() -> None:
         ],
         None,
     ]
+
+
+def test_list_zip_with_literal_argument() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3], None]}).with_columns()
+
+    out = df.with_columns(
+        z=polist.list_zip("a", pl.lit(["x", "y", "z"]).alias("literal"), pad=False)
+    )
+
+    assert out.get_column("z").to_list() == [
+        [{"a": 1, "literal": "x"}, {"a": 2, "literal": "y"}],
+        [{"a": 3, "literal": "x"}],
+        None,
+    ]
+
+
+def test_operate_scalar_on_list_with_literal_scalar() -> None:
+    df = pl.DataFrame({"vals": [[1.0, 2.0, None], None]}).with_columns(
+        s_lit=pl.lit(2.0)
+    )
+
+    out = df.with_columns(
+        mul=polist.operate_scalar_on_list("vals", "s_lit", operation="mul")
+    )
+
+    assert out.get_column("mul").to_list() == [[2.0, 4.0, None], None]
 
 
 def test_list_unzip_roundtrip_and_dtype() -> None:

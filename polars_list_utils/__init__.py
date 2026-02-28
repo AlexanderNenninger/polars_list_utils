@@ -20,6 +20,21 @@ def apply_fft(
     norm: Optional[str] = None,
     skip_fft: bool = False,
 ) -> pl.Expr:
+    """Apply FFT-based processing to a list column.
+
+    Args:
+        list_column: Input list column expression.
+        sample_rate: Sampling rate in Hz.
+        window: Optional window function name.
+        bp_min: Optional lower bandpass cutoff.
+        bp_max: Optional upper bandpass cutoff.
+        bp_ord: Optional bandpass filter order.
+        norm: Optional normalization mode.
+        skip_fft: If True, skips FFT and returns preprocessed signal.
+
+    Returns:
+        A Polars expression that evaluates to the processed list column.
+    """
     return register_plugin_function(
         args=[list_column],
         kwargs={
@@ -42,6 +57,16 @@ def operate_scalar_on_list(
     scalar_column: Union[pl.Expr, str, pl.Series],
     operation: Literal["add", "sub", "mul", "div"],
 ) -> pl.Expr:
+    """Apply a scalar operation to each element of a list column.
+
+    Args:
+        list_column: Input list column expression.
+        scalar_column: Scalar column/expression used per row.
+        operation: Arithmetic operation to apply.
+
+    Returns:
+        A Polars expression with the transformed list values.
+    """
     return register_plugin_function(
         args=[list_column, scalar_column],
         kwargs={
@@ -58,6 +83,16 @@ def interpolate_columns(
     y_data: Union[pl.Expr, str, pl.Series],
     x_interp: Union[pl.Expr, str, pl.Series],
 ) -> pl.Expr:
+    """Interpolate y-values at new x-positions for each row.
+
+    Args:
+        x_data: Known x-coordinates as a list column.
+        y_data: Known y-coordinates as a list column.
+        x_interp: Target x-coordinates for interpolation.
+
+    Returns:
+        A Polars expression containing interpolated y-values.
+    """
     return register_plugin_function(
         args=[x_data, y_data, x_interp],
         plugin_path=root_path,
@@ -70,6 +105,15 @@ def aggregate_list_col_elementwise(
     list_column: Union[pl.Expr, str, pl.Series],
     aggregation: Literal["mean", "sum", "count", "product", "gmean"] = "mean",
 ) -> pl.Expr:
+    """Aggregate list elements column-wise across rows.
+
+    Args:
+        list_column: Input list column expression.
+        aggregation: Aggregation method to apply.
+
+    Returns:
+        A Polars expression with the aggregated list result.
+    """
     return register_plugin_function(
         args=[list_column],
         kwargs={
@@ -92,6 +136,21 @@ def agg_of_range(
     x_min_idx_offset: Optional[int] = None,
     x_max_idx_offset: Optional[int] = None,
 ) -> pl.Expr:
+    """Aggregate y-values whose x-values fall within a range.
+
+    Args:
+        list_column_y: Y-value list column.
+        list_column_x: X-value list column.
+        aggregation: Aggregation method.
+        x_min: Lower inclusive bound.
+        x_max: Upper inclusive bound.
+        x_range_excluded: Optional sub-range to exclude.
+        x_min_idx_offset: Optional index offset from lower bound.
+        x_max_idx_offset: Optional index offset from upper bound.
+
+    Returns:
+        A Polars expression with one aggregated value per row.
+    """
     return register_plugin_function(
         args=[list_column_y, list_column_x],
         kwargs={
@@ -117,6 +176,20 @@ def mean_of_range(
     x_min_idx_offset: Optional[int] = None,
     x_max_idx_offset: Optional[int] = None,
 ) -> pl.Expr:
+    """Compute mean y-value inside an x-range for each row.
+
+    Args:
+        list_column_y: Y-value list column.
+        list_column_x: X-value list column.
+        x_min: Lower inclusive bound.
+        x_max: Upper inclusive bound.
+        x_range_excluded: Optional sub-range to exclude.
+        x_min_idx_offset: Optional index offset from lower bound.
+        x_max_idx_offset: Optional index offset from upper bound.
+
+    Returns:
+        A Polars expression with mean values per row.
+    """
     return register_plugin_function(
         args=[list_column_y, list_column_x],
         kwargs={
@@ -138,6 +211,16 @@ def inner_join_lists(
     list_column_right: Union[pl.Expr, str, pl.Series],
     join_nulls: bool = False,
 ) -> pl.Expr:
+    """Compute row-wise inner-join index pairs between two list columns.
+
+    Args:
+        list_column_left: Left list column.
+        list_column_right: Right list column.
+        join_nulls: Whether null values should match null values.
+
+    Returns:
+        A Polars expression yielding a struct of left/right index lists.
+    """
     return register_plugin_function(
         args=[list_column_left, list_column_right],
         kwargs={
@@ -154,6 +237,16 @@ def left_join_lists(
     list_column_right: Union[pl.Expr, str, pl.Series],
     join_nulls: bool = False,
 ) -> pl.Expr:
+    """Compute row-wise left-join index pairs between two list columns.
+
+    Args:
+        list_column_left: Left list column.
+        list_column_right: Right list column.
+        join_nulls: Whether null values should match null values.
+
+    Returns:
+        A Polars expression yielding a struct of left/right index lists.
+    """
     return register_plugin_function(
         args=[list_column_left, list_column_right],
         kwargs={
@@ -170,6 +263,16 @@ def outer_join_lists(
     list_column_right: Union[pl.Expr, str, pl.Series],
     join_nulls: bool = False,
 ) -> pl.Expr:
+    """Compute row-wise outer-join index pairs between two list columns.
+
+    Args:
+        list_column_left: Left list column.
+        list_column_right: Right list column.
+        join_nulls: Whether null values should match null values.
+
+    Returns:
+        A Polars expression yielding a struct of left/right index lists.
+    """
     return register_plugin_function(
         args=[list_column_left, list_column_right],
         kwargs={
@@ -187,6 +290,17 @@ def asof_join_lists(
     tolerance: Optional[float] = None,
     strategy: Literal["backward", "forward", "nearest"] = "backward",
 ) -> pl.Expr:
+    """Compute row-wise asof-join index pairs between two sorted lists.
+
+    Args:
+        list_column_left: Left list column.
+        list_column_right: Right list column.
+        tolerance: Optional maximum allowed distance.
+        strategy: Matching strategy: backward, forward, or nearest.
+
+    Returns:
+        A Polars expression yielding a struct of left/right index lists.
+    """
     return register_plugin_function(
         args=[list_column_left, list_column_right],
         kwargs={
@@ -204,6 +318,16 @@ def list_zip(
     list_column_right: Union[pl.Expr, str, pl.Series],
     pad: bool = False,
 ) -> pl.Expr:
+    """Zip two list columns into a list of structs.
+
+    Args:
+        list_column_left: Left list column.
+        list_column_right: Right list column.
+        pad: If True, pad the shorter list with nulls.
+
+    Returns:
+        A Polars expression yielding a list of structs per row.
+    """
     return register_plugin_function(
         args=[list_column_left, list_column_right],
         kwargs={
@@ -218,6 +342,14 @@ def list_zip(
 def list_unzip(
     list_struct_column: Union[pl.Expr, str, pl.Series],
 ) -> pl.Expr:
+    """Unzip a list-of-struct column into a struct-of-lists.
+
+    Args:
+        list_struct_column: Input list column with struct inner dtype.
+
+    Returns:
+        A Polars expression yielding a struct whose fields are list columns.
+    """
     return register_plugin_function(
         args=[list_struct_column],
         plugin_path=root_path,
@@ -233,6 +365,18 @@ def arg_sort_list(
     maintain_order: bool = False,
     limit: Optional[int] = None,
 ) -> pl.Expr:
+    """Return row-wise argsort indices for list elements.
+
+    Args:
+        list_column: Input list column.
+        descending: Sort descending if True.
+        nulls_last: Place nulls at the end if True.
+        maintain_order: Keep order among equal elements if True.
+        limit: Optional number of top indices to return.
+
+    Returns:
+        A Polars expression yielding list indices for sorted order.
+    """
     return register_plugin_function(
         args=[list_column],
         kwargs={

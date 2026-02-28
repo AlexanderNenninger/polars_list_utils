@@ -4,6 +4,35 @@ use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 use std::cmp::Ordering;
 
+fn broadcasted_len(
+    left_len: usize,
+    right_len: usize,
+    op_name: &str,
+) -> PolarsResult<usize> {
+    if left_len == right_len {
+        Ok(left_len)
+    } else if left_len == 1 {
+        Ok(right_len)
+    } else if right_len == 1 {
+        Ok(left_len)
+    } else {
+        Err(PolarsError::ComputeError(
+            format!(
+                "({op_name}): input lengths must match, or one input must have length 1 for broadcasting; got left={left_len}, right={right_len}"
+            )
+            .into(),
+        ))
+    }
+}
+
+#[inline]
+fn broadcasted_index(
+    row_idx: usize,
+    len: usize,
+) -> usize {
+    if len == 1 { 0 } else { row_idx }
+}
+
 #[derive(Deserialize, Default)]
 struct ListZipKwargs {
     #[serde(default)]
@@ -35,17 +64,18 @@ fn expr_list_zip(
 ) -> PolarsResult<Series> {
     let left = inputs[0].list()?;
     let right = inputs[1].list()?;
+    let out_len = broadcasted_len(left.len(), right.len(), "list_zip")?;
 
     let left_name = left.name().clone();
     let right_name = right.name().clone();
 
-    let mut rows: Vec<Option<Series>> = Vec::with_capacity(left.len());
+    let mut rows: Vec<Option<Series>> = Vec::with_capacity(out_len);
 
-    for (left_row, right_row) in left.amortized_iter().zip(right.amortized_iter()) {
+    for row_idx in 0..out_len {
+        let left_row = left.get_as_series(broadcasted_index(row_idx, left.len()));
+        let right_row = right.get_as_series(broadcasted_index(row_idx, right.len()));
         match (left_row, right_row) {
             (Some(left_row), Some(right_row)) => {
-                let left_row = left_row.as_ref();
-                let right_row = right_row.as_ref();
                 let zipped_len = if kwargs.pad {
                     left_row.len().max(right_row.len())
                 } else {
@@ -250,30 +280,34 @@ fn expr_inner_join_lists(
 ) -> PolarsResult<Series> {
     let x = inputs[0].list()?;
     let y = inputs[1].list()?;
+    let out_len = broadcasted_len(x.len(), y.len(), "inner_join_lists")?;
 
     let mut left_indices_builder = ListPrimitiveChunkedBuilder::<UInt32Type>::new(
         x.name().clone(),
-        x.len(),
-        x.len(),
+        out_len,
+        out_len,
         DataType::UInt32,
     );
     let mut right_indices_builder = ListPrimitiveChunkedBuilder::<UInt32Type>::new(
         y.name().clone(),
-        y.len(),
-        y.len(),
+        out_len,
+        out_len,
         DataType::UInt32,
     );
 
-    for (x, y) in x.amortized_iter().zip(y.amortized_iter()) {
-        if let (Some(x), Some(y)) = (x, y) {
-            let x = x.as_ref();
-            let y = y.as_ref();
-            if let Some(((left_keys, right_keys), _sorted)) = x
-                .hash_join_inner(y, JoinValidation::default(), kwargs.join_nulls)
+    for row_idx in 0..out_len {
+        let x_row = x.get_as_series(broadcasted_index(row_idx, x.len()));
+        let y_row = y.get_as_series(broadcasted_index(row_idx, y.len()));
+        if let (Some(x_row), Some(y_row)) = (x_row, y_row) {
+            if let Some(((left_keys, right_keys), _sorted)) = x_row
+                .hash_join_inner(&y_row, JoinValidation::default(), kwargs.join_nulls)
                 .ok()
             {
                 left_indices_builder.append_slice(&left_keys);
                 right_indices_builder.append_slice(&right_keys);
+            } else {
+                left_indices_builder.append_slice(&[]);
+                right_indices_builder.append_slice(&[]);
             }
         } else {
             left_indices_builder.append_null();
@@ -283,7 +317,7 @@ fn expr_inner_join_lists(
 
     let out = StructChunked::from_series(
         x.name().clone(),
-        x.len(),
+        out_len,
         [
             left_indices_builder.finish().into_series(),
             right_indices_builder.finish().into_series(),
@@ -306,17 +340,18 @@ fn expr_left_join_lists(
 ) -> PolarsResult<Series> {
     let left = inputs[0].list()?;
     let right = inputs[1].list()?;
+    let out_len = broadcasted_len(left.len(), right.len(), "left_join_lists")?;
 
-    let mut left_rows: Vec<Option<Series>> = Vec::with_capacity(left.len());
-    let mut right_rows: Vec<Option<Series>> = Vec::with_capacity(right.len());
+    let mut left_rows: Vec<Option<Series>> = Vec::with_capacity(out_len);
+    let mut right_rows: Vec<Option<Series>> = Vec::with_capacity(out_len);
 
-    for (left_row, right_row) in left.amortized_iter().zip(right.amortized_iter()) {
+    for row_idx in 0..out_len {
+        let left_row = left.get_as_series(broadcasted_index(row_idx, left.len()));
+        let right_row = right.get_as_series(broadcasted_index(row_idx, right.len()));
         if let (Some(left_row), Some(right_row)) = (left_row, right_row) {
-            let left_row = left_row.as_ref();
-            let right_row = right_row.as_ref();
             let (left_idx, right_idx) = compute_list_join_indices(
-                left_row,
-                right_row,
+                &left_row,
+                &right_row,
                 kwargs.join_nulls,
                 ListJoinMode::Left,
             )?;
@@ -336,7 +371,7 @@ fn expr_left_join_lists(
 
     let out = StructChunked::from_series(
         left.name().clone(),
-        left.len(),
+        out_len,
         [left_series, right_series].iter(),
     )?;
 
@@ -355,17 +390,18 @@ fn expr_outer_join_lists(
 ) -> PolarsResult<Series> {
     let left = inputs[0].list()?;
     let right = inputs[1].list()?;
+    let out_len = broadcasted_len(left.len(), right.len(), "outer_join_lists")?;
 
-    let mut left_rows: Vec<Option<Series>> = Vec::with_capacity(left.len());
-    let mut right_rows: Vec<Option<Series>> = Vec::with_capacity(right.len());
+    let mut left_rows: Vec<Option<Series>> = Vec::with_capacity(out_len);
+    let mut right_rows: Vec<Option<Series>> = Vec::with_capacity(out_len);
 
-    for (left_row, right_row) in left.amortized_iter().zip(right.amortized_iter()) {
+    for row_idx in 0..out_len {
+        let left_row = left.get_as_series(broadcasted_index(row_idx, left.len()));
+        let right_row = right.get_as_series(broadcasted_index(row_idx, right.len()));
         if let (Some(left_row), Some(right_row)) = (left_row, right_row) {
-            let left_row = left_row.as_ref();
-            let right_row = right_row.as_ref();
             let (left_idx, right_idx) = compute_list_join_indices(
-                left_row,
-                right_row,
+                &left_row,
+                &right_row,
                 kwargs.join_nulls,
                 ListJoinMode::Outer,
             )?;
@@ -385,7 +421,7 @@ fn expr_outer_join_lists(
 
     let out = StructChunked::from_series(
         left.name().clone(),
-        left.len(),
+        out_len,
         [left_series, right_series].iter(),
     )?;
 
@@ -604,6 +640,7 @@ pub fn expr_asof_join_lists(
 ) -> PolarsResult<Series> {
     let x = inputs[0].list()?;
     let y = inputs[1].list()?;
+    let out_len = broadcasted_len(x.len(), y.len(), "asof_join_lists")?;
     let tolerance = if let Some(tol) = kwargs.tolerance {
         if tol < 0.0 {
             return Err(PolarsError::ComputeError(
@@ -618,23 +655,23 @@ pub fn expr_asof_join_lists(
 
     let mut left_indices_builder = ListPrimitiveChunkedBuilder::<UInt32Type>::new(
         x.name().clone(),
-        x.len(),
-        x.len(),
+        out_len,
+        out_len,
         DataType::UInt32,
     );
     let mut right_indices_builder = ListPrimitiveChunkedBuilder::<UInt32Type>::new(
         y.name().clone(),
-        y.len(),
-        y.len(),
+        out_len,
+        out_len,
         DataType::UInt32,
     );
 
-    for (x, y) in x.amortized_iter().zip(y.amortized_iter()) {
-        if let (Some(x), Some(y)) = (x, y) {
-            let x = x.as_ref();
-            let y = y.as_ref();
+    for row_idx in 0..out_len {
+        let x_row = x.get_as_series(broadcasted_index(row_idx, x.len()));
+        let y_row = y.get_as_series(broadcasted_index(row_idx, y.len()));
+        if let (Some(x_row), Some(y_row)) = (x_row, y_row) {
             let (left_keys, right_keys) =
-                compute_asof_join_indices(x, y, tolerance, strategy)?;
+                compute_asof_join_indices(&x_row, &y_row, tolerance, strategy)?;
 
             left_indices_builder.append_slice(&left_keys);
             right_indices_builder.append_slice(&right_keys);
@@ -646,7 +683,7 @@ pub fn expr_asof_join_lists(
 
     let out = StructChunked::from_series(
         x.name().clone(),
-        x.len(),
+        out_len,
         [
             left_indices_builder.finish().into_series(),
             right_indices_builder.finish().into_series(),
