@@ -8,3 +8,4 @@ venv
 *.pyd
 .cargo/
 test.py
+.vscode/settings.json
