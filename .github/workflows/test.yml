@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main, master, staging]
+    tags: ["*"]
   workflow_dispatch:
 
 permissions:
@@ -40,3 +41,14 @@ jobs:
           uv venv --python "${{ steps.setup-python.outputs.python-path }}"
           uv run --python "${{ steps.setup-python.outputs.python-path }}" maturin develop --uv
           uv run --python "${{ steps.setup-python.outputs.python-path }}" pytest -q
+
+      - name: Build wheel
+        shell: bash
+        run: |
+          uv run --python "${{ steps.setup-python.outputs.python-path }}" maturin build --release --out dist
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
+          path: dist/*.whl
