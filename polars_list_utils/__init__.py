@@ -68,7 +68,7 @@ def interpolate_columns(
 
 def aggregate_list_col_elementwise(
     list_column: Union[pl.Expr, str, pl.Series],
-    aggregation: Literal["mean", "sum", "count", "product"] = "mean",
+    aggregation: Literal["mean", "sum", "count", "product", "gmean"] = "mean",
 ) -> pl.Expr:
     return register_plugin_function(
         args=[list_column],

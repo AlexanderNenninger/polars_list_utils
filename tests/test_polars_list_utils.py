@@ -194,6 +194,31 @@ def test_aggregate_list_col_elementwise_dynamic_expansion() -> None:
 @pytest.mark.parametrize(
     ("dtype", "vals"),
     [
+        (pl.List(pl.Int64), [[1, 4], [1, 9, 16]]),
+        (pl.List(pl.UInt32), [[1, 4], [1, 9, 16]]),
+        (pl.List(pl.Float32), [[1.0, 4.0], [1.0, 9.0, 16.0]]),
+        (pl.List(pl.Float64), [[1.0, 4.0], [1.0, 9.0, 16.0]]),
+    ],
+)
+def test_aggregate_list_col_elementwise_gmean_numeric_input_dtypes(
+    dtype: pl.DataType,
+    vals: list[list[int]] | list[list[float]],
+) -> None:
+    df = pl.DataFrame({"list_col": vals}).with_columns(pl.col("list_col").cast(dtype))
+
+    out = df.group_by(pl.lit(1)).agg(
+        gmean=polist.aggregate_list_col_elementwise("list_col", aggregation="gmean"),
+    )
+
+    assert out.schema["gmean"] == dtype
+
+    row = out.row(0, named=True)
+    assert row["gmean"] == [1.0, 6.0, 16.0]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "vals"),
+    [
         (pl.List(pl.Int64), [[1, 2], [3, 4, 5]]),
         (pl.List(pl.UInt32), [[1, 2], [3, 4, 5]]),
         (pl.List(pl.Float32), [[1.0, 2.0], [3.0, 4.0, 5.0]]),

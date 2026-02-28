@@ -1,4 +1,5 @@
 use crate::util::same_dtype;
+use num_traits::{FromPrimitive, ToPrimitive};
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
@@ -16,7 +17,6 @@ macro_rules! aggregate_list_native {
             out_inner_dtype: &DataType,
         ) -> PolarsResult<Series> {
             let mut buckets: Vec<Option<$acc_ty>> = Vec::new();
-            let mut products: Vec<Option<$acc_ty>> = Vec::new();
             let mut counts: Vec<usize> = Vec::new();
 
             for row in ca.amortized_iter() {
@@ -30,7 +30,6 @@ macro_rules! aggregate_list_native {
                 for (idx, val) in row.iter().enumerate() {
                     if idx >= buckets.len() {
                         buckets.resize(idx + 1, None);
-                        products.resize(idx + 1, None);
                         counts.resize(idx + 1, 0);
                     }
 
@@ -38,19 +37,28 @@ macro_rules! aggregate_list_native {
                         && ($valid)(val)
                     {
                         let val: $acc_ty = val as $acc_ty;
-                        if let Some(bucket) = &mut buckets[idx] {
-                            *bucket += val;
-                        } else {
-                            buckets[idx] = Some(val);
+                        match aggregation {
+                            "mean" | "sum" => {
+                                if let Some(bucket) = &mut buckets[idx] {
+                                    *bucket += val;
+                                } else {
+                                    buckets[idx] = Some(val);
+                                }
+                                counts[idx] += 1;
+                            }
+                            "product" | "gmean" => {
+                                if let Some(bucket) = &mut buckets[idx] {
+                                    *bucket *= val;
+                                } else {
+                                    buckets[idx] = Some(val);
+                                }
+                                counts[idx] += 1;
+                            }
+                            "count" => {
+                                counts[idx] += 1;
+                            }
+                            _ => unreachable!(),
                         }
-
-                        if let Some(product) = &mut products[idx] {
-                            *product *= val;
-                        } else {
-                            products[idx] = Some(val);
-                        }
-
-                        counts[idx] += 1;
                     }
                 }
             }
@@ -72,7 +80,26 @@ macro_rules! aggregate_list_native {
                     .iter()
                     .map(|count| Some(*count as $acc_ty))
                     .collect::<Vec<Option<$acc_ty>>>(),
-                "product" => products,
+                "product" => buckets,
+                "gmean" => buckets
+                    .iter()
+                    .zip(counts.iter())
+                    .map(|(bucket, count)| {
+                        if *count == 0 || bucket.is_none() {
+                            None
+                        } else {
+                            let product = bucket.and_then(|b| b.to_f64());
+                            match product {
+                                Some(p) if p > 0.0 => {
+                                    <$acc_ty as FromPrimitive>::from_f64(
+                                        p.powf(1.0 / (*count as f64)),
+                                    )
+                                }
+                                _ => None,
+                            }
+                        }
+                    })
+                    .collect::<Vec<Option<$acc_ty>>>(),
                 _ => unreachable!(),
             };
 
@@ -99,13 +126,13 @@ aggregate_list_native!(agg_f64, f64, f64, f64, |x: f64| x.is_finite());
 /// Aggregate the elements, column-wise, of a `List` column.
 ///
 /// The function raises an Error if:
-/// * the aggregation method is not one of "mean", "sum", "count", or "product"
+/// * the aggregation method is not one of "mean", "sum", "count", "product", or "gmean"
 ///
 /// The function dynamically expands its internal buffers when it encounters
 /// longer sublists.
 ///
 /// ## Parameters
-/// - `aggregation`: The aggregation method to use. One of "mean", "sum", "count", or "product".
+/// - `aggregation`: The aggregation method to use. One of "mean", "sum", "count", "product", or "gmean".
 ///
 /// ## Return value
 /// New `List` column with the same inner dtype as the input.
@@ -116,7 +143,7 @@ fn expr_aggregate_list_col_elementwise(
 ) -> PolarsResult<Series> {
     let ca = inputs[0].list()?;
 
-    let valid_aggregations = ["mean", "sum", "count", "product"];
+    let valid_aggregations = ["mean", "sum", "count", "product", "gmean"];
     if !valid_aggregations.contains(&kwargs.aggregation.as_str()) {
         return Err(PolarsError::ComputeError(
             format!(
