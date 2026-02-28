@@ -61,7 +61,7 @@ fn expr_fft(
 
     // TODO: This is a bit ugly, but we want to return a nice Error somehow.
     // probably this does a lot of uneccecary work if we do raise an Error
-    let out: ListChunked = ca.apply_amortized(|s| {
+    let out: ListChunked = ca.try_apply_amortized(|s| {
         let s: &Series = s.as_ref();
         let ca: &Float64Chunked = s.f64().unwrap();
 
@@ -80,13 +80,13 @@ fn expr_fft(
 
         // We don't need further calculations if we raise an Error
         if invalid_value_encountered {
-            return Series::new(PlSmallStr::EMPTY, dummy_vec.clone());
+            return Ok(Series::new(PlSmallStr::EMPTY, dummy_vec.clone()));
         }
 
         // We don't need further calculations if we raise an Error
         if !samples.len().is_power_of_two() {
             not_a_power_of_two = true;
-            return Series::new(PlSmallStr::EMPTY, dummy_vec.clone());
+            return Ok(Series::new(PlSmallStr::EMPTY, dummy_vec.clone()));
         }
 
         // Maybe apply a bandpass filter to the samples
@@ -101,7 +101,7 @@ fn expr_fft(
         // We don't need further calculations if we raise an Error
         let mut samples = if let Err(err) = samples {
             bandpass_error = Some(err);
-            return Series::new(PlSmallStr::EMPTY, dummy_vec.clone());
+            return Ok(Series::new(PlSmallStr::EMPTY, dummy_vec.clone()));
         } else {
             samples.unwrap()
         };
@@ -122,7 +122,7 @@ fn expr_fft(
 
         // If we skip the FFT, we return the samples now
         if kwargs.skip_fft {
-            return Series::new(PlSmallStr::EMPTY, samples);
+            return Ok(Series::new(PlSmallStr::EMPTY, samples));
         }
 
         // Calculate the FFT
@@ -137,13 +137,13 @@ fn expr_fft(
             _ => 1.0,
         };
 
-        Series::new(
+        Ok(Series::new(
             PlSmallStr::EMPTY,
             fft.iter()
                 .map(|val| val / normalization_factor)
                 .collect::<Vec<f64>>(),
-        )
-    });
+        ))
+    })?;
 
     if invalid_value_encountered {
         Err(PolarsError::ComputeError(
