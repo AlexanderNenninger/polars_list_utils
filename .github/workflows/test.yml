@@ -61,18 +61,20 @@ jobs:
           path: dist/*.whl
 
   macos-wheels:
-    name: macOS wheel / ${{ matrix.target }}
+    name: macOS wheel / ${{ matrix.artifact }}
     needs: test
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13
-            target: x86_64
-            deployment_target: "10.13"
+          - runner: macos-14
+            target: universal2-apple-darwin
+            artifact: universal2
+            deployment_target: "11.0"
           - runner: macos-14
             target: aarch64
+            artifact: aarch64
             deployment_target: "11.0"
     env:
       MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
@@ -96,7 +98,7 @@ jobs:
       - name: Upload macOS wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.target }}
+          name: wheels-macos-${{ matrix.artifact }}
           path: dist/*.whl
 
   windows-wheels:
