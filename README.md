@@ -19,41 +19,52 @@ Status: Work-in-Progress!
 
 ## Features
 
-- `polist.apply_fft`
-    - Applies a Fast Fourier Transform (FFT) to a List-type column of signal data.
-    - Can pre-process the signals with a windowing function (e.g. Hann, Hamming, Blackman).
-    - Can pre-process the signals with a Butterworth filter (low-pass, high-pass, band-pass).
-    - Can normalize the FFT amplitudes by the signal length or the window sum.
+- DSP and interpolation
+        - `polist.apply_fft`
+            - Applies FFT to list columns.
+            - Supports windowing and Butterworth pre-filtering.
+            - Supports normalization options.
+        - `polist.interpolate_columns`
+            - Interpolates `y_interp` from `x_data`, `y_data`, `x_interp`.
+        - `polist.fft_freqs`, `polist.fft_freqs_linspace`
+            - Helper functions for FFT/frequency axes and linspace generation.
 
-- `polist.operate_scalar_on_list`
-    - Applies a scalar operation of a Float-type column to each element of a List-type column.
-    - This is currently not supported in Polars, see [this issue][list_eval_named].
-    - Can apply the operations `add`, `sub`, `mul`, and `div`.
+- Missing-data handling (new)
+        - `polist.fill_missing_list`
+            - Forward/backward fill per list row.
+            - Optional `limit` for maximum consecutive fills.
+            - Treats nulls and `NaN` as missing.
+        - `polist.interpolate_missing_list`
+            - Interpolates missing values with `linear`, `nearest`, or `first_last` modes.
+            - Treats nulls and `NaN` as missing.
+        - `polist.missing_gap_flags`
+            - Returns list-wise boolean flags for missing runs.
+            - Supports minimum gap length via `min_gap`.
 
-- `polist.interpolate_columns`
-    - Interpolates a new List-type column from 3 specified List-type columns.
-    - Behaviour as expected from the `numpy.interp` function, but for Polars DataFrames.
-    - Supply the `x_data`, `y_data`, and `x_interp` columns to obtain the `y_interp` column.
+- List arithmetic and sorting
+        - `polist.operate_scalar_on_list`
+            - Applies `add`, `sub`, `mul`, `div` between list values and a scalar column.
+            - Useful where Polars list eval with named columns is limited ([issue][list_eval_named]).
+        - `polist.arg_sort_list`
+            - Per-row `argsort` indices for list values.
 
-- `polist.aggregate_list_col_elementwise`
-    - Applies element-wise list-aggregations to a List-type column in a GroupBy context.
-    - Currently supports `sum`, `mean`, and `count`.
-    - This is possible using the Polars API e.g. using `list.get(n)` (see my SO question [here][elementwise_agg]), but it does not scale well as for large lists and complicated queries it can lead to a stack overflow (see [this issue][stack_overflow] and many others).
+- List joins and reshaping
+        - `polist.inner_join_lists`, `polist.left_join_lists`, `polist.outer_join_lists`
+            - Return per-row index pairs for joining list values.
+            - Supports `join_nulls` behavior.
+        - `polist.asof_join_lists`
+            - Asof-style list joins with `backward`, `forward`, and `nearest` strategies.
+            - Optional tolerance.
+        - `polist.list_zip`, `polist.list_unzip`
+            - Convert between two lists and list-of-struct / struct-of-lists forms.
 
-- `polist.mean_of_range`
-    - Computes the mean of a range of y-values defined by some x-values for List-type columns.
-    - This is useful for feature extraction from signals, e.g. to compute the mean of a signal in a certain time range or a spectrum in a certain frequency range.
-    - This is somewhat possible using the Polars API (e.g. using `list.slice` and `list.mean`), but can get very complicated for the simple case of wanting to specify certain y-values based on a custom x-axis.
-
-- `polist.fft_freqs`
-    - Computes the frequencies of the FFT bins for a given sampling rate and number of samples.
-    - This function does not operate dynamically on List-type columns, use it with `pl.lit`.
-    - This is useful for plotting the FFT spectrum in the frequency domain. Similar to the `numpy.fft.fftfreq` function, but in my opinion much simpler.
-
-- `polist.fft_freqs_linspace`
-    - Basically a thin wrapper around something like `numpy.linspace` to create a linearly spaced List of values.
-    - This function does not operate dynamically on List-type columns, use it with `pl.lit`.
-    - This is useful when used together with `polist.interpolate_columns`.
+- Aggregation and feature extraction
+        - `polist.aggregate_list_col_elementwise`
+            - Group-wise elementwise aggregations over list columns.
+            - Supports `mean`, `sum`, `count`, `product`, `gmean`.
+        - `polist.agg_of_range`, `polist.mean_of_range`
+            - Aggregations over value ranges defined by a companion x-axis list.
+            - Useful for timeseries/spectral feature extraction.
 
 [list_eval_named]: https://github.com/pola-rs/polars/issues/7210
 [elementwise_agg]: https://stackoverflow.com/questions/73776179/element-wise-aggregation-of-a-column-of-type-listf64-in-polars
@@ -99,7 +110,8 @@ uv run ./examples/showcase_dsp.py
 6) Lint
 
 ```bash
-uvx ruff check
+uv run ruff check .
+uv run ty check
 cargo fmt
 ```
 
