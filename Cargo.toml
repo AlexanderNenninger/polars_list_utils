@@ -8,13 +8,38 @@ name = "polars_list_utils"
 crate-type= ["cdylib"]
 
 [dependencies]
+<<<<<<< HEAD
 pyo3 = { version = "0.23.5", features = ["extension-module", "abi3-py38"] }
 pyo3-polars = { version = "0.20.0", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
-polars = { version = "0.46.0", features = ["dtype-struct"] }
+polars = { version = "0.46.0", features = [
+    "dtype-struct",
+    "dtype-i8",
+    "dtype-u8",
+    "dtype-u16",
+    "dtype-i16",
+] }
 polars-arrow = { version = "0.46.0" }
 realfft = "3.4.0"
 butterworth = "0.1.0"
 interp = "2.0.2"
 num-traits = "0.2.19"
 thiserror = "2.0.12"
+=======
+pyo3 = { version = "0.23.*", features = ["extension-module", "abi3-py38"] }
+pyo3-polars = { version = "0.20.*", features = ["derive"] }
+serde = { version = "1.*", features = ["derive"] }
+polars = { version = "0.46.*", features = [
+    "dtype-struct",
+    "dtype-i8",
+    "dtype-u8",
+    "dtype-u16",
+    "dtype-i16",
+] }
+polars-arrow = { version = "0.46.*" }
+realfft = "3.*"
+butterworth = "0.1.*"
+interp = "2.*"
+num-traits = "0.2.*"
+thiserror = "2.*"
+>>>>>>> c8eff44 (Update polars dependency features in Cargo.toml)
